@@ -77,7 +77,7 @@ bind_port = 8080
 # eventlet_debug = false
 
 [pipeline:main]
-pipeline = catch_errors gatekeeper healthcheck proxy-logging cache container_sync bulk tempurl ratelimit tempauth container-quotas account-quotas slo dlo proxy-logging proxy-server
+pipeline = catch_errors gatekeeper healthcheck proxy-logging cache container_sync bulk tempurl ratelimit tempauth ibuck container-quotas account-quotas slo dlo proxy-logging proxy-server
 
 [app:proxy-server]
 use = egg:swift#proxy
@@ -361,6 +361,15 @@ user_test5_tester5 = testing5 service
 # in ACLs by setting allow_names_in_acls to false:
 # allow_names_in_acls = true
 
+[filter:ibuck]
+use = egg:swift#ibuck
+# You can override the default log routing for this filter here:
+# set log_name = ibuck
+# set log_facility = LOG_LOCAL0
+# set log_level = INFO
+# set log_headers = false
+# set log_address = /dev/log
+
 [filter:healthcheck]
 use = egg:swift#healthcheck
 # An optional filesystem path, which if present, will cause the healthcheck
@@ -603,6 +612,7 @@ use = egg:swift#bulk
 # delete_container_retry_count = 0
 
 # Note: Put after auth and staticweb in the pipeline.
+
 [filter:slo]
 use = egg:swift#slo
 # max_manifest_segments = 1000
