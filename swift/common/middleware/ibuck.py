@@ -30,8 +30,7 @@ from swift.common.utils import get_logger
 TYPE_IMAGE_LARGE = 600
 TYPE_IMAGE_MEDIUM = 300
 TYPE_IMAGE_THUMB = 140
-IMAGE_TYPE = ['jpeg', 'jpg', 'png']
-CROP_HANDLER = ['ImageUploadHandler', 'CoverImageUploadHandler']
+IMAGE_TYPE = ['jpeg', 'jpg', 'png', 'rif']
 SAVE_IMAGE_FORMAT = 'JPEG'
 
 MAX_FILE_SIZE = 5368709122
@@ -67,7 +66,7 @@ def resize_image(dimension, im, logger):
         try:
             im.load()
         except IOError as e:
-            logger.error("[PhotoStackMiddleware : resize_image] %s" % e)
+            logger.error("[IBuckMiddleware : resize_image] %s" % e)
 
         out = im.resize((new_width, new_height), PIL.Image.BICUBIC)
 
@@ -108,7 +107,7 @@ def upload_image(application, request_body, destination, env):
     new_env['CONTENT_LENGTH'] = new_request_body_size
     new_env['swift.source'] = 'PS'
     new_env['HTTP_USER_AGENT'] = \
-        '%s PhotoStackExpand' % env.get('HTTP_USER_AGENT')
+        '%s IBuckExpand' % env.get('HTTP_USER_AGENT')
 
     create_obj_req = Request.blank(destination, new_env)
     resp = create_obj_req.get_response(application)
@@ -174,11 +173,13 @@ class ImageHandler(object):
         try:
             im.load()
         except IOError as e:
-            self.logger.error("[PhotoStackMiddleware : handle] %s" % e)
+            self.logger.error("[IBuckMiddleware : handle] %s" % e)
         im.save(resize_data, SAVE_IMAGE_FORMAT, progressive=True)
         upload_image(self.app, resize_data, '/'.join(['', self.version, self.account, self.container, 'p' + self.obj]),
                      self.env)
         resize_data.close()
+
+        # ***************************
 
         for dimension in self.resize_dimensions:
             im, new_size = resize_image(dimension, im, self.logger)
@@ -205,55 +206,13 @@ class ImageHandler(object):
             resize_data.close()
 
 
-class CoverOrProfileImageUploadHandler(ImageHandler):
+class ImageUploadHandler(ImageHandler):
     def __init__(self, app, req, logger):
-        super(CoverOrProfileImageUploadHandler, self).__init__(app, req, logger)
-
-    def handle(self):
-        super(CoverOrProfileImageUploadHandler, self).handle()
-
-        # Crop Image
-        crp_image = crop_image(self.orig_image, int(self.req.headers['X-Cimx']), int(self.req.headers['X-Cimy']),
-                               int(self.req.headers['X-Iw']), int(self.req.headers['X-Ih']))
-
-        resize_data = cStringIO.StringIO()
-        crp_image.save(resize_data, SAVE_IMAGE_FORMAT)
-        upload_image(self.app, resize_data,
-                     '/'.join(['', self.version, self.account, self.container, 'crp' + self.obj]), self.env)
-        resize_data.close()
-
-        # **************** progressive of crop image
-        resize_data = cStringIO.StringIO()
-        crp_image.save(resize_data, SAVE_IMAGE_FORMAT, progressive=True)
-        upload_image(self.app, resize_data,
-                     '/'.join(['', self.version, self.account, self.container, 'pcrp' + self.obj]), self.env)
-        resize_data.close()
-
-        # Resize Crop Image to thumb image
-        im, _ = resize_image(TYPE_IMAGE_THUMB, crp_image, self.logger)
-        resize_data = cStringIO.StringIO()
-        im.save(resize_data, SAVE_IMAGE_FORMAT)
-        upload_image(self.app, resize_data,
-                     '/'.join(['', self.version, self.account, self.container, 'thumb' + self.obj]),
-                     self.env)
-        resize_data.close()
-
-        # ****************** progressive image of thumb image
-        resize_data = cStringIO.StringIO()
-        im.save(resize_data, SAVE_IMAGE_FORMAT, progressive=True)
-        upload_image(self.app, resize_data,
-                     '/'.join(['', self.version, self.account, self.container, 'pthumb' + self.obj]),
-                     self.env)
-        resize_data.close()
-
-
-class AlbumImageUploadHandler(ImageHandler):
-    def __init__(self, app, req, logger):
-        super(AlbumImageUploadHandler, self).__init__(app, req, logger)
+        super(ImageUploadHandler, self).__init__(app, req, logger)
 
     def handle(self):
         self.resize_dimensions = [TYPE_IMAGE_LARGE, TYPE_IMAGE_MEDIUM, TYPE_IMAGE_THUMB]
-        super(AlbumImageUploadHandler, self).handle()
+        super(ImageUploadHandler, self).handle()
 
 
 class IBuckMiddleware(object):
@@ -266,9 +225,7 @@ class IBuckMiddleware(object):
         self.conf = conf
         self.logger = get_logger(conf, log_route='catch-errors')
         self.image_handlers = {
-            'ImageUploadHandler': CoverOrProfileImageUploadHandler,
-            'CoverImageUploadHandler': CoverOrProfileImageUploadHandler,
-            'AlbumImageUploadHandler': AlbumImageUploadHandler
+            'ImageUploadHandler': ImageUploadHandler,
         }
 
     @wsgify
@@ -281,8 +238,8 @@ class IBuckMiddleware(object):
         # if not resp:
         try:
 
-            if req.environ.get('HTTP_X_PHOTOSTACK_ENABLE', None):
-                self.image_handlers[req.environ['HTTP_X_IMAGE_HANDLER']](self.app, req, self.logger).handle()
+            if req.environ.get('HTTP_X_IBUCK_ENABLE', None):
+                self.image_handlers['ImageUploadHandler'](self.app, req, self.logger).handle()
                 resp = HTTPCreated(request=req)
             else:
                 resp = self.app
@@ -292,7 +249,7 @@ class IBuckMiddleware(object):
         except HTTPNotFound as e:
             resp = e
         except Exception as e:
-            self.logger.error("[PhotoStackMiddleware] %s, req = %s " % (e, req))
+            self.logger.error("[IBuckMiddleware] %s, req = %s " % (e, req))
             resp = HTTPBadRequest(request=req)
 
         return resp
